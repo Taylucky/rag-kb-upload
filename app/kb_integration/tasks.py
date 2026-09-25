@@ -6,7 +6,9 @@ from .business import (
     UVARCVideoKnowledgeDataManager,
     UVARCWebsiteKnowledgeDataManager,
     UVARCMarkdownKnowledgeDataManager,
+    UVARCWikiKnowledgeDataManager,
     UVARCKnowledgeBaseManager,
+    WikiAuthenticationError,
 )
 
 
@@ -84,6 +86,41 @@ def update_markdown_knowledge():
 
     return result
 
+def update_wiki_knowledge():
+    # Scrape the RCI wiki and generate Markdown knowledge documents.
+    #
+    # Requires valid NetBadge cookies on disk. They cannot be refreshed
+    # unattended, because NetBadge needs a Duo push approved on a phone,
+    # so run scripts/save_wiki_auth.py first.
+
+    print("Updating RCI Wiki Knowledge")
+
+    wiki_folder = KNOWLEDGE_FOLDER / "wiki"
+
+    manager = UVARCWikiKnowledgeDataManager(
+        output_folder=wiki_folder
+    )
+
+    result = manager.generate_knowledge_documents()
+
+    print()
+    print("Wiki Update Complete")
+
+    return result
+
+def refresh_wiki_auth():
+    # Interactive NetBadge login. Prompts for credentials and waits for a
+    # Duo push, so this is never safe to call from a scheduled job.
+
+    import getpass
+
+    from .business import netbadge_login
+
+    username = input("UVA Computing ID : ")
+    password = getpass.getpass("Password         : ")
+
+    return netbadge_login(username, password)
+
 def update_all_sources():
     # Regenerate local knowledge documents for every source.
 
@@ -95,6 +132,13 @@ def update_all_sources():
     results["website"] = update_website_knowledge()
     results["video"] = update_video_knowledge()
     results["markdown"] = update_markdown_knowledge()
+
+    # Expired wiki cookies must not take the other sources down with them.
+    try:
+        results["wiki"] = update_wiki_knowledge()
+    except WikiAuthenticationError as error:
+        print(f"SKIPPING wiki: {error}")
+        results["wiki"] = {"error": str(error)}
 
     print()
     print("Knowledge Source Update Complete")
